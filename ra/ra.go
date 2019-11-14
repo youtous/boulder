@@ -39,6 +39,7 @@ import (
 	"github.com/letsencrypt/boulder/web"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weppos/publicsuffix-go/publicsuffix"
+	"golang.org/x/net/trace"
 	grpc "google.golang.org/grpc"
 )
 
@@ -1788,6 +1789,9 @@ func (ra *RegistrationAuthorityImpl) checkOrderNames(names []string) error {
 
 // NewOrder creates a new order object
 func (ra *RegistrationAuthorityImpl) NewOrder(ctx context.Context, req *rapb.NewOrderRequest) (*corepb.Order, error) {
+	if tr, ok := trace.FromContext(ctx); ok {
+		tr.LazyPrintf("got a NewOrder")
+	}
 	order := &corepb.Order{
 		RegistrationID: req.RegistrationID,
 		Names:          core.UniqueLowerNames(req.Names),

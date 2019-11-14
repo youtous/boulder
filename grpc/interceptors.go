@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/trace"
+
 	"github.com/jmhodges/clock"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -143,6 +145,10 @@ func (ci *clientInterceptor) intercept(
 		return berrors.InternalServerError("clientInterceptor has nil inFlightRPCs gauge")
 	}
 
+	if tr, ok := trace.FromContext(ctx); ok {
+		tr.LazyPrintf("call %s", fullMethod)
+	}
+
 	localCtx, cancel := context.WithTimeout(ctx, ci.timeout)
 	defer cancel()
 	// Disable fail-fast so RPCs will retry until deadline, even if all backends
@@ -191,6 +197,13 @@ func (ci *clientInterceptor) intercept(
 			latency: ci.clk.Since(begin),
 		}
 	}
+	if tr, ok := trace.FromContext(ctx); ok {
+		tr.LazyPrintf("done %s", fullMethod)
+		if err != nil {
+			tr.SetError()
+		}
+	}
+
 	return err
 }
 

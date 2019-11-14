@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"log/syslog"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -19,6 +20,8 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/net/trace"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
 
 	cfsslLog "github.com/cloudflare/cfssl/log"
@@ -141,6 +144,7 @@ func (log promLogger) Println(args ...interface{}) {
 func StatsAndLogging(logConf SyslogConfig, addr string) (metrics.Scope, blog.Logger) {
 	logger := NewLogger(logConf)
 	scope := newScope(addr, logger)
+	grpc.EnableTracing = true
 	return scope, logger
 }
 
@@ -192,6 +196,17 @@ func newScope(addr string, logger blog.Logger) metrics.Scope {
 	mux.Handle("/debug/pprof/heap", pprof.Handler("heap"))
 	mux.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
 	mux.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	mux.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
+	trace.AuthRequest = func(req *http.Request) (any, sensitive bool) {
+		host, _, err := net.SplitHostPort(req.RemoteAddr)
+		if err != nil {
+			host = req.RemoteAddr
+		}
+		if host == "10.77.77.1" {
+			return true, true
+		}
+		return false, false
+	}
 
 	mux.Handle("/debug/vars", expvar.Handler())
 	mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{
