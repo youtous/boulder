@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
@@ -363,14 +364,20 @@ func GeneratePurgeURLs(der []byte, issuer *x509.Certificate) ([]string, error) {
 		return nil, err
 	}
 
-	req, err := ocsp.CreateRequest(cert, issuer, nil)
+	return GeneratePurgeURLsBySerial(cert.SerialNumber, cert.OCSPServer, issuer)
+}
+
+func GeneratePurgeURLsBySerial(serial *big.Int, ocspServer []string, issuer *x509.Certificate) ([]string, error) {
+	req, err := ocsp.CreateRequest(&x509.Certificate{
+		SerialNumber: serial,
+	}, issuer, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create a GET and special Akamai POST style OCSP url for each endpoint in cert.OCSPServer
 	urls := []string{}
-	for _, ocspServer := range cert.OCSPServer {
+	for _, ocspServer := range ocspServer {
 		if !strings.HasSuffix(ocspServer, "/") {
 			ocspServer += "/"
 		}

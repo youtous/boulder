@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"os"
 	"os/user"
 	"sort"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/letsencrypt/boulder/akamai"
 	"github.com/letsencrypt/boulder/cmd"
 	"github.com/letsencrypt/boulder/core"
 	"github.com/letsencrypt/boulder/db"
@@ -129,6 +132,34 @@ func revokeByReg(ctx context.Context, regID int64, reasonCode revocation.Reason,
 	return
 }
 
+func purgeBatch(serialPath string, intermediatePath string, ocspServer string) error {
+	serials, err := ioutil.ReadFile(serialPath)
+	if err != nil {
+		return err
+	}
+	issuer, err := core.LoadCert(intermediatePath)
+	if err != nil {
+		return err
+	}
+	for _, serial := range strings.Split(string(serials), "\n") {
+		hexBytes, err := hex.DecodeString(serial)
+		if err != nil {
+			fmt.Printf("error decoding %q\n", serial)
+		}
+		serialInt := big.NewInt(0)
+		serialInt.SetBytes(hexBytes)
+		urls, err := akamai.GeneratePurgeURLsBySerial(serialInt, []string{ocspServer}, issuer)
+		if err != nil {
+			fmt.Printf("error generating purge URLs for %s: %s\n", serial, err)
+		}
+		for _, u := range urls {
+			fmt.Println(u)
+		}
+	}
+
+	return nil
+}
+
 func revokeBatch(rac core.RegistrationAuthority, logger blog.Logger, dbMap *db.WrappedMap, serialPath string, reasonCode revocation.Reason, parallelism int) error {
 	serials, err := ioutil.ReadFile(serialPath)
 	if err != nil {
@@ -199,6 +230,14 @@ func main() {
 	ctx := context.Background()
 	args := flagSet.Args()
 	switch {
+	case command == "generate-purge-urls" && len(args) == 3:
+		if len(args) != 3 {
+			cmd.Fail("usage: generate-purge-urls serials.txt issuer.pem http://ocsp.example/")
+		}
+		serialPath, issuerPath, ocspServer := args[0], args[1], args[2]
+		//rac, logger, dbMap, _ := setupContext(c)
+		err = purgeBatch(serialPath, issuerPath, ocspServer)
+		cmd.FailOnError(err, "Batch revocation failed")
 	case command == "batched-serial-revoke" && len(args) == 3:
 		// 1: serial file path,  2: reasonCode, 3: parallelism
 		serialPath := args[0]
